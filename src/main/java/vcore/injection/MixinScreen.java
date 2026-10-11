@@ -5,20 +5,23 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Objects;
+
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.text.ClickEvent;
 import net.minecraft.text.Style;
+
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
 import vcore.core.Managers;
 import vcore.core.manager.client.CommandManager;
 import vcore.core.manager.client.ModuleManager;
-import vcore.events.impl.ClientClickEvent;
 import vcore.features.modules.Module;
 import vcore.gui.misc.DialogScreen;
 import vcore.utility.render.TextureStorage;
@@ -27,7 +30,11 @@ import vcore.utility.render.TextureStorage;
 public abstract class MixinScreen {
 
     @Shadow
-    protected abstract void init(int width, int height);
+    public abstract void init(
+        MinecraftClient client,
+        int width,
+        int height
+    );
 
     @Inject(
         method = "handleTextClick",
@@ -43,24 +50,34 @@ public abstract class MixinScreen {
         Style style,
         CallbackInfoReturnable<Boolean> cir
     ) {
-        if (style.getClickEvent() instanceof ClientClickEvent clientClickEvent
-            && clientClickEvent.getValue().startsWith(Managers.COMMAND.getPrefix())) {
-            try {
-                CommandManager manager = Managers.COMMAND;
-                manager.getDispatcher().execute(
-                    clientClickEvent.getValue()
-                        .substring(Managers.COMMAND.getPrefix().length()),
-                    manager.getSource()
-                );
-                cir.setReturnValue(true);
-            } catch (CommandSyntaxException ignored) {
-                // Invalid command: leave normal handling unchanged.
+        ClickEvent clickEvent = style.getClickEvent();
+
+        if (clickEvent instanceof ClickEvent.RunCommand runCommand) {
+            String command = runCommand.command();
+            String prefix = Managers.COMMAND.getPrefix();
+
+            if (command.startsWith(prefix)) {
+                try {
+                    CommandManager manager = Managers.COMMAND;
+
+                    manager.getDispatcher().execute(
+                        command.substring(prefix.length()),
+                        manager.getSource()
+                    );
+
+                    cir.setReturnValue(true);
+                } catch (CommandSyntaxException exception) {
+                    // Lệnh không hợp lệ.
+                }
             }
         }
     }
 
     @Inject(method = "filesDragged", at = @At("HEAD"))
-    public void filesDragged(List<Path> paths, CallbackInfo ci) {
+    public void filesDragged(
+        List<Path> paths,
+        CallbackInfo ci
+    ) {
         if (paths == null || paths.isEmpty()) {
             return;
         }
@@ -94,10 +111,10 @@ public abstract class MixinScreen {
         at = @At("HEAD"),
         cancellable = true
     )
-    private void renderInGameBackground(CallbackInfo ci) {
+    private void renderInGameBackground(CallbackInfo info) {
         if (ModuleManager.noRender.isEnabled()
             && ModuleManager.noRender.disableGuiBackGround.getValue()) {
-            ci.cancel();
+            info.cancel();
         }
     }
 
